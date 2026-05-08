@@ -248,8 +248,8 @@ TopCover.BorderSizePixel = 0
 TopCover.Parent = TopBar
 
 local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, -50, 1, 0)
-Title.Position = UDim2.new(0, 12, 0, 0)
+Title.Size = UDim2.new(1, -90, 1, 0)
+Title.Position = UDim2.new(0, 42, 0, 0)
 Title.BackgroundTransparency = 1
 Title.Text = "BEHAX HUB <font color='#4E86FF'>V4.1</font>"
 Title.RichText = true
@@ -258,6 +258,14 @@ Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = TopBar
+
+local Logo = Instance.new("ImageLabel")
+Logo.Name = "Logo"
+Logo.Size = UDim2.new(0, 24, 0, 24)
+Logo.Position = UDim2.new(0, 10, 0.5, -12)
+Logo.BackgroundTransparency = 1
+Logo.Image = "https://raw.githubusercontent.com/butucante-sys/scripts/main/BeHaxLogoNoBg.png"
+Logo.Parent = TopBar
 
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size = UDim2.new(0, 40, 0, 40)
