@@ -25,30 +25,42 @@ local Settings = {
 }
 
 local Connections = {}
+local RoleCache = {}
 
--- Utility Functions
+-- Optimized Role Detection
 local function getPlayerRole(player)
     if not player or Settings.Killed then return "Innocent" end
+    if RoleCache[player] then return RoleCache[player] end
+    
     local character = player.Character
     local backpack = player.Backpack
     
+    -- Fast weapon check
     local hasKnife = (character and (character:FindFirstChild("Knife") or character:FindFirstChild("Slasher"))) or 
                      (backpack and (backpack:FindFirstChild("Knife") or backpack:FindFirstChild("Slasher")))
-    if hasKnife then return "Murderer" end
+    if hasKnife then RoleCache[player] = "Murderer" return "Murderer" end
     
     local hasGun = (character and (character:FindFirstChild("Gun") or character:FindFirstChild("Revolver"))) or 
                    (backpack and (backpack:FindFirstChild("Gun") or backpack:FindFirstChild("Revolver")))
-    if hasGun then return "Sheriff" end
+    if hasGun then RoleCache[player] = "Sheriff" return "Sheriff" end
     
     local status = player:FindFirstChild("Status")
     if status and status:FindFirstChild("Role") then
         local r = status.Role.Value
-        if r == "Murderer" or r == "Knife" then return "Murderer" end
-        if r == "Sheriff" or r == "Hero" then return "Sheriff" end
+        if r == "Murderer" or r == "Knife" then RoleCache[player] = "Murderer" return "Murderer" end
+        if r == "Sheriff" or r == "Hero" then RoleCache[player] = "Sheriff" return "Sheriff" end
     end
     
     return "Innocent"
 end
+
+-- Refresh roles periodically or on inventory change
+task.spawn(function()
+    while task.wait(1) do
+        if Settings.Killed then break end
+        RoleCache = {} -- Clear cache to re-detect
+    end
+end)
 
 local function getMurderer()
     for _, player in pairs(Players:GetPlayers()) do
@@ -86,15 +98,11 @@ local function applyESP(player)
     
     local function setupHighlight(character)
         if Settings.Killed then return end
-        task.wait(0.5)
-        if Settings.Killed then return end
-        
         local highlight = character:FindFirstChild("ESPHighlight") or Instance.new("Highlight")
         highlight.Name = "ESPHighlight"
         highlight.Parent = character
         
         local auraVisual = nil
-        
         local connection
         connection = RunService.Heartbeat:Connect(function()
             if Settings.Killed or not character or not character.Parent then
@@ -151,33 +159,18 @@ end
 
 -- Combat Hooks
 local function initCombat()
-    -- Aimlock (E Key / Left Click for Sheriff)
     table.insert(Connections, RunService.RenderStepped:Connect(function()
         if Settings.Killed or not Settings.Aimlock then return end
-        
         local myRole = getPlayerRole(LocalPlayer)
-        local isAiming = UserInputService:IsKeyDown(Enum.KeyCode.E)
-        
-        if myRole == "Sheriff" and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-            isAiming = true
-        end
+        local isAiming = UserInputService:IsKeyDown(Enum.KeyCode.E) or (myRole == "Sheriff" and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1))
         
         if isAiming then
-            local target = nil
-            local targetPart = "Head"
-            
-            if myRole == "Murderer" then
-                target = getSheriff()
-                targetPart = "UpperTorso"
-            elseif myRole == "Sheriff" then
-                target = getMurderer()
-                targetPart = "Head"
-            end
+            local target = (myRole == "Murderer" and getSheriff() or getMurderer())
+            local targetPart = (myRole == "Murderer" and "UpperTorso" or "Head")
             
             if target and target.Character and target.Character:FindFirstChild(targetPart) then
                 local cam = workspace.CurrentCamera
-                local targetPos = target.Character[targetPart].Position
-                cam.CFrame = CFrame.new(cam.CFrame.Position, targetPos)
+                cam.CFrame = CFrame.new(cam.CFrame.Position, target.Character[targetPart].Position)
             end
         end
     end))
@@ -186,47 +179,42 @@ end
 -- Knife Aura Logic
 table.insert(Connections, RunService.Stepped:Connect(function()
     if Settings.Killed or not Settings.KnifeAura then return end
-    
     local character = LocalPlayer.Character
     local knife = character and (character:FindFirstChild("Knife") or character:FindFirstChild("Slasher"))
     if knife then
         for _, player in pairs(Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                local targetHRP = player.Character.HumanoidRootPart
-                local distance = (character.HumanoidRootPart.Position - targetHRP.Position).Magnitude
-                if distance <= Settings.AuraRange then knife:Activate() end
+                if (character.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude <= Settings.AuraRange then
+                    knife:Activate()
+                end
             end
         end
     end
 end))
 
 ---------------------------------------------------------------------
--- MODERN UI SYSTEM (FIXED CORNERS & COLORS)
+-- OPTIMIZED MODERN UI (8PX CORNERS)
 ---------------------------------------------------------------------
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "BeHaxHub"
 ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = game:GetService("CoreGui")
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0, 480, 0, 320)
 MainFrame.Position = UDim2.new(0.5, -240, 0.5, -160)
-MainFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 17)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 MainFrame.BorderSizePixel = 0
-MainFrame.ClipsDescendants = false -- Set to false to allow Stroke/Shadow visuals
 MainFrame.Parent = ScreenGui
 
 local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 20)
+UICorner.CornerRadius = UDim.new(0, 8) -- REDUCED ROUNDING
 UICorner.Parent = MainFrame
 
 local UIStroke = Instance.new("UIStroke")
 UIStroke.Color = Color3.fromRGB(45, 45, 55)
-UIStroke.Thickness = 1.5
-UIStroke.Transparency = 0.5
+UIStroke.Thickness = 1.2
 UIStroke.Parent = MainFrame
 
 local function KillScript()
@@ -242,70 +230,67 @@ local function KillScript()
     ScreenGui:Destroy()
 end
 
--- TopBar Container to handle rounding correctly
 local TopBar = Instance.new("Frame")
-TopBar.Size = UDim2.new(1, 0, 0, 45)
-TopBar.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+TopBar.Size = UDim2.new(1, 0, 0, 40)
+TopBar.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 TopBar.BorderSizePixel = 0
 TopBar.Parent = MainFrame
 
-local TopBarCorner = Instance.new("UICorner")
-TopBarCorner.CornerRadius = UDim.new(0, 20)
-TopBarCorner.Parent = TopBar
+local TopCorner = Instance.new("UICorner")
+TopCorner.CornerRadius = UDim.new(0, 8)
+TopCorner.Parent = TopBar
 
--- Cover the bottom rounding of the top bar
-local TopBarCover = Instance.new("Frame")
-TopBarCover.Size = UDim2.new(1, 0, 0, 20)
-TopBarCover.Position = UDim2.new(0, 0, 1, -20)
-TopBarCover.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
-TopBarCover.BorderSizePixel = 0
-TopBarCover.Parent = TopBar
+local TopCover = Instance.new("Frame")
+TopCover.Size = UDim2.new(1, 0, 0, 10)
+TopCover.Position = UDim2.new(0, 0, 1, -10)
+TopCover.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+TopCover.BorderSizePixel = 0
+TopCover.Parent = TopBar
 
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -50, 1, 0)
-Title.Position = UDim2.new(0, 15, 0, 0)
+Title.Position = UDim2.new(0, 12, 0, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "BEHAX HUB <font color='#4E86FF'>V4.0</font>"
+Title.Text = "BEHAX HUB <font color='#4E86FF'>V4.1</font>"
 Title.RichText = true
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
-Title.TextSize = 14
+Title.TextSize = 13
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = TopBar
 
 local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(0, 45, 0, 45)
-CloseBtn.Position = UDim2.new(1, -45, 0, 0)
+CloseBtn.Size = UDim2.new(0, 40, 0, 40)
+CloseBtn.Position = UDim2.new(1, -40, 0, 0)
 CloseBtn.BackgroundTransparency = 1
 CloseBtn.Text = "X"
-CloseBtn.TextColor3 = Color3.fromRGB(180, 180, 190)
+CloseBtn.TextColor3 = Color3.fromRGB(150, 150, 160)
 CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 16
+CloseBtn.TextSize = 14
 CloseBtn.Parent = TopBar
 CloseBtn.MouseButton1Click:Connect(KillScript)
 
 local SideBar = Instance.new("Frame")
-SideBar.Size = UDim2.new(0, 130, 1, -45)
-SideBar.Position = UDim2.new(0, 0, 0, 45)
-SideBar.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+SideBar.Size = UDim2.new(0, 120, 1, -40)
+SideBar.Position = UDim2.new(0, 0, 0, 40)
+SideBar.BackgroundColor3 = Color3.fromRGB(18, 18, 23)
 SideBar.BorderSizePixel = 0
 SideBar.Parent = MainFrame
 
-local SideBarCorner = Instance.new("UICorner")
-SideBarCorner.CornerRadius = UDim.new(0, 20)
-SideBarCorner.Parent = SideBar
+local SideCorner = Instance.new("UICorner")
+SideCorner.CornerRadius = UDim.new(0, 8)
+SideCorner.Parent = SideBar
 
--- Cover the top/right rounding of the sidebar
-local SideBarCover = Instance.new("Frame")
-SideBarCover.Size = UDim2.new(0, 20, 1, 0)
-SideBarCover.Position = UDim2.new(1, -20, 0, 0)
-SideBarCover.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-SideBarCover.BorderSizePixel = 0
-SideBarCover.Parent = SideBar
+local SideCover = Instance.new("Frame")
+SideCover.Size = UDim2.new(0, 10, 1, 0)
+SideCover.Position = UDim2.new(1, -10, 0, 0)
+SideCover.BackgroundColor3 = Color3.fromRGB(18, 18, 23)
+SideCover.BorderSizePixel = 0
+SideCover.Parent = SideBar
 
 local ContentArea = Instance.new("Frame")
-ContentArea.Size = UDim2.new(1, -130, 1, -45)
-ContentArea.Position = UDim2.new(0, 130, 0, 45)
+ContentArea.Size = UDim2.new(1, -120, 1, -40)
+ContentArea.Position = UDim2.new(0, 120, 0, 40)
 ContentArea.BackgroundTransparency = 1
 ContentArea.Parent = MainFrame
 
@@ -313,24 +298,24 @@ local Tabs = {}
 
 local function createTab(name)
     local tabButton = Instance.new("TextButton")
-    tabButton.Size = UDim2.new(1, -15, 0, 38)
-    tabButton.Position = UDim2.new(0, 7, 0, #Tabs * 42 + 10)
-    tabButton.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+    tabButton.Size = UDim2.new(1, -10, 0, 34)
+    tabButton.Position = UDim2.new(0, 5, 0, #Tabs * 38 + 10)
+    tabButton.BackgroundColor3 = Color3.fromRGB(18, 18, 23)
     tabButton.BorderSizePixel = 0
     tabButton.Text = "  " .. name
     tabButton.TextColor3 = Color3.fromRGB(140, 140, 150)
     tabButton.Font = Enum.Font.GothamMedium
-    tabButton.TextSize = 13
+    tabButton.TextSize = 12
     tabButton.TextXAlignment = Enum.TextXAlignment.Left
     tabButton.Parent = SideBar
     
     local TabCorner = Instance.new("UICorner")
-    TabCorner.CornerRadius = UDim.new(0, 8)
+    TabCorner.CornerRadius = UDim.new(0, 4)
     TabCorner.Parent = tabButton
     
     local tabContent = Instance.new("ScrollingFrame")
-    tabContent.Size = UDim2.new(1, -20, 1, -20)
-    tabContent.Position = UDim2.new(0, 10, 0, 10)
+    tabContent.Size = UDim2.new(1, -16, 1, -16)
+    tabContent.Position = UDim2.new(0, 8, 0, 8)
     tabContent.BackgroundTransparency = 1
     tabContent.ScrollBarThickness = 0
     tabContent.Visible = false
@@ -338,21 +323,21 @@ local function createTab(name)
     tabContent.Parent = ContentArea
     
     local UIListLayout = Instance.new("UIListLayout")
-    UIListLayout.Padding = UDim.new(0, 8)
+    UIListLayout.Padding = UDim.new(0, 6)
     UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
     UIListLayout.Parent = tabContent
     
     UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        tabContent.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
+        tabContent.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 10)
     end)
     
     local function select()
         for _, t in pairs(Tabs) do
             t.Content.Visible = false
-            TweenService:Create(t.Button, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(15, 15, 20), TextColor3 = Color3.fromRGB(140, 140, 150)}):Play()
+            TweenService:Create(t.Button, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(18, 18, 23), TextColor3 = Color3.fromRGB(140, 140, 150)}):Play()
         end
         tabContent.Visible = true
-        TweenService:Create(tabButton, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(30, 30, 40), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+        TweenService:Create(tabButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(30, 30, 40), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
     end
     
     tabButton.MouseButton1Click:Connect(select)
@@ -363,29 +348,29 @@ end
 
 local function createToggle(parent, name, default, callback)
     local toggleFrame = Instance.new("Frame")
-    toggleFrame.Size = UDim2.new(1, 0, 0, 38)
+    toggleFrame.Size = UDim2.new(1, 0, 0, 34)
     toggleFrame.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
     toggleFrame.BorderSizePixel = 0
     toggleFrame.Parent = parent
     
     local Corner = Instance.new("UICorner")
-    Corner.CornerRadius = UDim.new(0, 10)
+    Corner.CornerRadius = UDim.new(0, 4)
     Corner.Parent = toggleFrame
     
     local label = Instance.new("TextLabel")
     label.Size = UDim2.new(1, -60, 1, 0)
-    label.Position = UDim2.new(0, 15, 0, 0)
+    label.Position = UDim2.new(0, 12, 0, 0)
     label.BackgroundTransparency = 1
     label.Text = name
     label.TextColor3 = Color3.fromRGB(200, 200, 210)
     label.Font = Enum.Font.Gotham
-    label.TextSize = 13
+    label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Parent = toggleFrame
     
     local bg = Instance.new("Frame")
-    bg.Size = UDim2.new(0, 40, 0, 22)
-    bg.Position = UDim2.new(1, -52, 0.5, -11)
+    bg.Size = UDim2.new(0, 34, 0, 18)
+    bg.Position = UDim2.new(1, -45, 0.5, -9)
     bg.BackgroundColor3 = default and Color3.fromRGB(78, 134, 255) or Color3.fromRGB(40, 40, 50)
     bg.Parent = toggleFrame
     
@@ -394,8 +379,8 @@ local function createToggle(parent, name, default, callback)
     bgCorner.Parent = bg
     
     local knob = Instance.new("Frame")
-    knob.Size = UDim2.new(0, 16, 0, 16)
-    knob.Position = default and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+    knob.Size = UDim2.new(0, 12, 0, 12)
+    knob.Position = default and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 3, 0.5, -6)
     knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     knob.Parent = bg
     
@@ -412,40 +397,40 @@ local function createToggle(parent, name, default, callback)
     local active = default
     btn.MouseButton1Click:Connect(function()
         active = not active
-        local targetPos = active and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+        local targetPos = active and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 3, 0.5, -6)
         local targetColor = active and Color3.fromRGB(78, 134, 255) or Color3.fromRGB(40, 40, 50)
-        TweenService:Create(knob, TweenInfo.new(0.2), {Position = targetPos}):Play()
-        TweenService:Create(bg, TweenInfo.new(0.2), {BackgroundColor3 = targetColor}):Play()
+        TweenService:Create(knob, TweenInfo.new(0.15), {Position = targetPos}):Play()
+        TweenService:Create(bg, TweenInfo.new(0.15), {BackgroundColor3 = targetColor}):Play()
         callback(active)
     end)
 end
 
 local function createSlider(parent, name, min, max, default, callback)
     local sliderFrame = Instance.new("Frame")
-    sliderFrame.Size = UDim2.new(1, 0, 0, 55)
+    sliderFrame.Size = UDim2.new(1, 0, 0, 50)
     sliderFrame.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
     sliderFrame.BorderSizePixel = 0
     sliderFrame.Parent = parent
     
     local Corner = Instance.new("UICorner")
-    Corner.CornerRadius = UDim.new(0, 10)
+    Corner.CornerRadius = UDim.new(0, 4)
     Corner.Parent = sliderFrame
     
     local label = Instance.new("TextLabel")
     label.Size = UDim2.new(1, -20, 0, 25)
-    label.Position = UDim2.new(0, 15, 0, 8)
+    label.Position = UDim2.new(0, 12, 0, 5)
     label.BackgroundTransparency = 1
     label.Text = name .. ": <font color='#4E86FF'>" .. default .. "</font>"
     label.RichText = true
     label.TextColor3 = Color3.fromRGB(200, 200, 210)
     label.Font = Enum.Font.Gotham
-    label.TextSize = 12
+    label.TextSize = 11
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Parent = sliderFrame
     
     local bar = Instance.new("Frame")
-    bar.Size = UDim2.new(1, -30, 0, 4)
-    bar.Position = UDim2.new(0, 15, 0, 40)
+    bar.Size = UDim2.new(1, -24, 0, 4)
+    bar.Position = UDim2.new(0, 12, 0, 35)
     bar.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
     bar.Parent = sliderFrame
     
@@ -499,7 +484,7 @@ UserInputService.InputChanged:Connect(function(input)
 end)
 UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
 
--- Tabs
+-- Create Tabs
 local ESPTab = createTab("Visuals")
 createToggle(ESPTab, "Master ESP", Settings.Enabled, function(v) Settings.Enabled = v end)
 createToggle(ESPTab, "Show Murderer", Settings.ShowMurderer, function(v) Settings.ShowMurderer = v end)
@@ -515,7 +500,7 @@ local function createSection(parent, name)
     label.Text = name
     label.TextColor3 = Color3.fromRGB(90, 90, 105)
     label.Font = Enum.Font.GothamBold
-    label.TextSize = 11
+    label.TextSize = 10
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Parent = parent
 end
@@ -529,9 +514,9 @@ createToggle(CombatTab, "Aimbot (Hold E)", Settings.Aimlock, function(v) Setting
 createSlider(CombatTab, "Aura Range", 5, 25, Settings.AuraRange, function(v) Settings.AuraRange = v end)
 createToggle(CombatTab, "Show Range Visual", Settings.ShowAuraVisual, function(v) Settings.ShowAuraVisual = v end)
 
--- Initialize Systems
-for _, player in ipairs(Players:GetPlayers()) do applyESP(player) end
+-- Initialize Systems FAST
+task.spawn(initCombat)
+for _, player in ipairs(Players:GetPlayers()) do task.spawn(applyESP, player) end
 table.insert(Connections, Players.PlayerAdded:Connect(applyESP))
-initCombat()
 
-print("BeHax Hub Modern UI Loaded!")
+print("BeHax Hub Optimized Loaded!")
