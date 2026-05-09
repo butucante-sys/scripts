@@ -29,6 +29,8 @@ local Settings = {
     WalkSpeed = 16,
     JumpPower = 50,
     InfJump = false,
+    Noclip = false,
+    AutoGrabGun = false,
     Killed = false
 }
 
@@ -180,7 +182,30 @@ local function initCombat()
         end
         
         if isAiming then
-            local target = (myRole == "Murderer" and getSheriff() or getMurderer())
+            local target = nil
+            if myRole == "Murderer" then
+                target = getSheriff()
+                if not target then
+                    -- Target closest innocent if Sheriff is dead/missing
+                    local closestDist = math.huge
+                    local myChar = LocalPlayer.Character
+                    if myChar and myChar.PrimaryPart then
+                        local myPos = myChar.PrimaryPart.Position
+                        for _, p in pairs(Players:GetPlayers()) do
+                            if p ~= LocalPlayer and getPlayerRole(p) == "Innocent" and p.Character and p.Character.PrimaryPart then
+                                local dist = (p.Character.PrimaryPart.Position - myPos).Magnitude
+                                if dist < closestDist then
+                                    closestDist = dist
+                                    target = p
+                                end
+                            end
+                        end
+                    end
+                end
+            else
+                target = getMurderer()
+            end
+            
             local targetPart = (myRole == "Murderer" and "UpperTorso" or "Head")
             
             if target and target.Character and target.Character:FindFirstChild(targetPart) then
@@ -190,11 +215,20 @@ local function initCombat()
                 if myRole == "Sheriff" and Settings.SheriffAutoShoot then
                     local currentTick = tick()
                     if not Settings.LastAutoShoot or (currentTick - Settings.LastAutoShoot) > 1.5 then
-                        Settings.LastAutoShoot = currentTick
-                        task.spawn(function()
-                            task.wait(0.1) -- Little delay to ensure aim is set
-                            if mouse1click then mouse1click() end
-                        end)
+                        local rayParams = RaycastParams.new()
+                        rayParams.FilterDescendantsInstances = {LocalPlayer.Character, target.Character}
+                        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+                        local origin = cam.CFrame.Position
+                        local direction = (target.Character[targetPart].Position - origin)
+                        local raycastResult = workspace:Raycast(origin, direction, rayParams)
+                        
+                        if not raycastResult then
+                            Settings.LastAutoShoot = currentTick
+                            task.spawn(function()
+                                task.wait(0.1) -- Little delay to ensure aim is set
+                                if mouse1click then mouse1click() end
+                            end)
+                        end
                     end
                 end
             end
@@ -413,6 +447,58 @@ UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then dragToggle = false end
 end)
 
+-- Loading Animation before Key System
+local LoadingFrame = Instance.new("Frame")
+LoadingFrame.Size = UDim2.new(0, 200, 0, 200)
+LoadingFrame.Position = UDim2.new(0.5, -100, 0.5, -100)
+LoadingFrame.BackgroundTransparency = 1
+LoadingFrame.Parent = ScreenGui
+
+local LoadingLogo = Instance.new("ImageLabel")
+LoadingLogo.Size = UDim2.new(0, 100, 0, 100)
+LoadingLogo.Position = UDim2.new(0.5, -50, 0.5, -50)
+LoadingLogo.BackgroundTransparency = 1
+LoadingLogo.Image = finalLogoImage
+LoadingLogo.ImageTransparency = 1
+LoadingLogo.Parent = LoadingFrame
+
+local LoadingText = Instance.new("TextLabel")
+LoadingText.Size = UDim2.new(1, 0, 0, 30)
+LoadingText.Position = UDim2.new(0, 0, 1, -30)
+LoadingText.BackgroundTransparency = 1
+LoadingText.Text = "Loading BeHax Hub..."
+LoadingText.TextColor3 = Color3.fromRGB(255, 255, 255)
+LoadingText.Font = Enum.Font.GothamBold
+LoadingText.TextSize = 14
+LoadingText.TextTransparency = 1
+LoadingText.Parent = LoadingFrame
+
+KeyFrame.Visible = false
+KeyFrame.Size = UDim2.new(0, 0, 0, 0) -- For pop animation
+
+task.spawn(function()
+    TweenService:Create(LoadingLogo, TweenInfo.new(0.5), {ImageTransparency = 0}):Play()
+    task.wait(0.5)
+    TweenService:Create(LoadingText, TweenInfo.new(0.5), {TextTransparency = 0}):Play()
+    
+    for i = 1, 2 do
+        TweenService:Create(LoadingLogo, TweenInfo.new(0.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Size = UDim2.new(0, 120, 0, 120), Position = UDim2.new(0.5, -60, 0.5, -60), Rotation = 180}):Play()
+        task.wait(0.4)
+        TweenService:Create(LoadingLogo, TweenInfo.new(0.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Size = UDim2.new(0, 100, 0, 100), Position = UDim2.new(0.5, -50, 0.5, -50), Rotation = 360}):Play()
+        task.wait(0.4)
+        LoadingLogo.Rotation = 0
+    end
+    
+    TweenService:Create(LoadingLogo, TweenInfo.new(0.5), {ImageTransparency = 1}):Play()
+    TweenService:Create(LoadingText, TweenInfo.new(0.5), {TextTransparency = 1}):Play()
+    task.wait(0.5)
+    
+    LoadingFrame:Destroy()
+    
+    KeyFrame.Visible = true
+    TweenService:Create(KeyFrame, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 350, 0, 200)}):Play()
+end)
+
 local function KillScript()
     Settings.Killed = true
     for _, conn in pairs(Connections) do if conn then conn:Disconnect() end end
@@ -475,6 +561,16 @@ CloseBtn.TextSize = 16
 CloseBtn.Parent = TopBar
 CloseBtn.MouseButton1Click:Connect(KillScript)
 
+local MinBtn = Instance.new("TextButton")
+MinBtn.Size = UDim2.new(0, 40, 0, 40)
+MinBtn.Position = UDim2.new(1, -90, 0.5, -20)
+MinBtn.BackgroundTransparency = 1
+MinBtn.Text = "-"
+MinBtn.TextColor3 = Color3.fromRGB(150, 150, 160)
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.TextSize = 24
+MinBtn.Parent = TopBar
+
 local SideBar = Instance.new("Frame")
 SideBar.Size = UDim2.new(0, 140, 1, -60)
 SideBar.Position = UDim2.new(0, 0, 0, 60)
@@ -498,6 +594,26 @@ ContentArea.Size = UDim2.new(1, -140, 1, -60)
 ContentArea.Position = UDim2.new(0, 140, 0, 60)
 ContentArea.BackgroundTransparency = 1
 ContentArea.Parent = MainFrame
+
+local minimized = false
+MinBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        MinBtn.Text = "+"
+        ContentArea.Visible = false
+        SideBar.Visible = false
+        TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Size = UDim2.new(0, 550, 0, 60)}):Play()
+    else
+        MinBtn.Text = "-"
+        local t = TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Size = UDim2.new(0, 550, 0, 360)})
+        t:Play()
+        t.Completed:Wait()
+        if not minimized then
+            ContentArea.Visible = true
+            SideBar.Visible = true
+        end
+    end
+end)
 
 local Tabs = {}
 
@@ -786,11 +902,15 @@ createToggle(CombatTab, "Knife Aura", Settings.KnifeAura, function(v) Settings.K
 createSlider(CombatTab, "Aura Range", 5, 25, Settings.AuraRange, function(v) Settings.AuraRange = v end)
 createToggle(CombatTab, "Show Range Visual", Settings.ShowAuraVisual, function(v) Settings.ShowAuraVisual = v end)
 
+createSection(CombatTab, "INNOCENT")
+createToggle(CombatTab, "Auto Grab Gun", Settings.AutoGrabGun, function(v) Settings.AutoGrabGun = v end)
+
 local PlayerTab = createTab("Player")
 createSection(PlayerTab, "MOVEMENT")
 createSlider(PlayerTab, "Walk Speed", 16, 120, Settings.WalkSpeed, function(v) Settings.WalkSpeed = v end)
 createSlider(PlayerTab, "Jump Power", 50, 200, Settings.JumpPower, function(v) Settings.JumpPower = v end)
 createToggle(PlayerTab, "Infinite Jump", Settings.InfJump, function(v) Settings.InfJump = v end)
+createToggle(PlayerTab, "Noclip", Settings.Noclip, function(v) Settings.Noclip = v end)
 
 InitializeFeatures = function()
     task.spawn(initCombat)
@@ -822,6 +942,60 @@ InitializeFeatures = function()
                 if Settings.JumpPower ~= 50 then
                     humanoid.UseJumpPower = true
                     humanoid.JumpPower = Settings.JumpPower
+                end
+            end
+        end
+    end))
+    
+    -- Noclip loop
+    table.insert(Connections, RunService.Stepped:Connect(function()
+        if Settings.Killed or not Settings.Noclip then return end
+        local character = LocalPlayer.Character
+        if character then
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end))
+    
+    -- Gun ESP & Auto Grab
+    table.insert(Connections, RunService.Heartbeat:Connect(function()
+        if Settings.Killed then return end
+        
+        local gunDrop = workspace:FindFirstChild("Normal") and workspace.Normal:FindFirstChild("GunDrop")
+        if not gunDrop then gunDrop = workspace:FindFirstChild("GunDrop") end
+        
+        if not gunDrop then
+            for _, v in ipairs(workspace:GetDescendants()) do
+                if v.Name == "GunDrop" then
+                    gunDrop = v
+                    break
+                end
+            end
+        end
+        
+        if gunDrop then
+            -- Gun ESP
+            if Settings.Enabled and Settings.ShowSheriff then
+                local highlight = gunDrop:FindFirstChild("ESPHighlight") or Instance.new("Highlight")
+                highlight.Name = "ESPHighlight"
+                highlight.FillColor = Settings.SheriffColor
+                highlight.OutlineColor = Settings.SheriffColor
+                highlight.Parent = gunDrop
+            end
+            
+            -- Auto Grab
+            if Settings.AutoGrabGun and getPlayerRole(LocalPlayer) == "Innocent" then
+                local myChar = LocalPlayer.Character
+                if myChar and myChar.PrimaryPart then
+                    if firetouchinterest then
+                        firetouchinterest(myChar.PrimaryPart, gunDrop, 0)
+                        firetouchinterest(myChar.PrimaryPart, gunDrop, 1)
+                    else
+                        myChar:PivotTo(gunDrop.CFrame)
+                    end
                 end
             end
         end
