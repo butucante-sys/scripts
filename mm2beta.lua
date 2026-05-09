@@ -18,13 +18,22 @@ local Settings = {
     OutlineTransparency = 0,
     -- Combat
     KnifeAura = false,
-    Aimlock = false,
+    MurdererAimlock = false,
+    SheriffAimlock = false,
+    MurdererAimKey = Enum.KeyCode.E,
+    SheriffAimKey = Enum.UserInputType.MouseButton1,
+    SheriffAutoShoot = false,
     AuraRange = 15,
     ShowAuraVisual = false,
+    -- LocalPlayer Mods
+    WalkSpeed = 16,
+    JumpPower = 50,
+    InfJump = false,
     Killed = false
 }
 
 local Connections = {}
+local InitializeFeatures -- Forward declaration
 local RoleCache = {}
 
 -- Optimized Role Detection
@@ -158,9 +167,17 @@ end
 -- Combat Hooks
 local function initCombat()
     table.insert(Connections, RunService.RenderStepped:Connect(function()
-        if Settings.Killed or not Settings.Aimlock then return end
+        if Settings.Killed then return end
         local myRole = getPlayerRole(LocalPlayer)
-        local isAiming = UserInputService:IsKeyDown(Enum.KeyCode.E) or (myRole == "Sheriff" and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1))
+        local isAiming = false
+        
+        if myRole == "Murderer" and Settings.MurdererAimlock then
+            isAiming = (typeof(Settings.MurdererAimKey) == "EnumItem" and Settings.MurdererAimKey.EnumType == Enum.KeyCode and UserInputService:IsKeyDown(Settings.MurdererAimKey)) or
+                       (typeof(Settings.MurdererAimKey) == "EnumItem" and Settings.MurdererAimKey.EnumType == Enum.UserInputType and UserInputService:IsMouseButtonPressed(Settings.MurdererAimKey))
+        elseif myRole == "Sheriff" and Settings.SheriffAimlock then
+            isAiming = (typeof(Settings.SheriffAimKey) == "EnumItem" and Settings.SheriffAimKey.EnumType == Enum.KeyCode and UserInputService:IsKeyDown(Settings.SheriffAimKey)) or
+                       (typeof(Settings.SheriffAimKey) == "EnumItem" and Settings.SheriffAimKey.EnumType == Enum.UserInputType and UserInputService:IsMouseButtonPressed(Settings.SheriffAimKey))
+        end
         
         if isAiming then
             local target = (myRole == "Murderer" and getSheriff() or getMurderer())
@@ -169,6 +186,17 @@ local function initCombat()
             if target and target.Character and target.Character:FindFirstChild(targetPart) then
                 local cam = workspace.CurrentCamera
                 cam.CFrame = CFrame.new(cam.CFrame.Position, target.Character[targetPart].Position)
+                
+                if myRole == "Sheriff" and Settings.SheriffAutoShoot then
+                    local currentTick = tick()
+                    if not Settings.LastAutoShoot or (currentTick - Settings.LastAutoShoot) > 1.5 then
+                        Settings.LastAutoShoot = currentTick
+                        task.spawn(function()
+                            task.wait(0.1) -- Little delay to ensure aim is set
+                            if mouse1click then mouse1click() end
+                        end)
+                    end
+                end
             end
         end
     end))
@@ -215,6 +243,176 @@ UIStroke.Color = Color3.fromRGB(45, 45, 55)
 UIStroke.Thickness = 1.2
 UIStroke.Parent = MainFrame
 
+MainFrame.Visible = false -- Hide until key is entered
+
+-- Shared Logo Logic
+local logoUrl = "https://raw.githubusercontent.com/butucante-sys/scripts/main/BeHaxLogoNoBg.png"
+local success, logoResult = pcall(function()
+    if writefile and getcustomasset and readfile then
+        if not isfile("BeHaxLogo.png") then writefile("BeHaxLogo.png", game:HttpGet(logoUrl)) end
+        return getcustomasset("BeHaxLogo.png")
+    end
+    return logoUrl
+end)
+local finalLogoImage = success and logoResult or logoUrl
+
+-- Key System UI
+local KeyFrame = Instance.new("Frame")
+KeyFrame.Size = UDim2.new(0, 350, 0, 200)
+KeyFrame.Position = UDim2.new(0.5, -175, 0.5, -100)
+KeyFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 17)
+KeyFrame.BorderSizePixel = 0
+KeyFrame.Parent = ScreenGui
+
+local KeyCorner = Instance.new("UICorner")
+KeyCorner.CornerRadius = UDim.new(0, 8)
+KeyCorner.Parent = KeyFrame
+
+local KeyStroke = Instance.new("UIStroke")
+KeyStroke.Color = Color3.fromRGB(45, 45, 55)
+KeyStroke.Thickness = 1.2
+KeyStroke.Parent = KeyFrame
+
+local KeyLogo = Instance.new("ImageLabel")
+KeyLogo.Size = UDim2.new(0, 48, 0, 48)
+KeyLogo.Position = UDim2.new(0, 15, 0, 5)
+KeyLogo.BackgroundTransparency = 1
+KeyLogo.Image = finalLogoImage
+KeyLogo.Parent = KeyFrame
+
+local KeyTitle = Instance.new("TextLabel")
+KeyTitle.Size = UDim2.new(1, -70, 0, 40)
+KeyTitle.Position = UDim2.new(0, 65, 0, 10)
+KeyTitle.BackgroundTransparency = 1
+KeyTitle.Text = "BEHAX HUB - KEY SYSTEM"
+KeyTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+KeyTitle.Font = Enum.Font.GothamBold
+KeyTitle.TextSize = 16
+KeyTitle.TextXAlignment = Enum.TextXAlignment.Left
+KeyTitle.Parent = KeyFrame
+
+local KeyInput = Instance.new("TextBox")
+KeyInput.Size = UDim2.new(1, -60, 0, 40)
+KeyInput.Position = UDim2.new(0, 30, 0, 65)
+KeyInput.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+KeyInput.BorderSizePixel = 0
+KeyInput.Text = ""
+KeyInput.PlaceholderText = "Enter Key Here..."
+KeyInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+KeyInput.Font = Enum.Font.Gotham
+KeyInput.TextSize = 14
+KeyInput.Parent = KeyFrame
+
+local InputCorner = Instance.new("UICorner")
+InputCorner.CornerRadius = UDim.new(0, 6)
+InputCorner.Parent = KeyInput
+
+local CheckBtn = Instance.new("TextButton")
+CheckBtn.Size = UDim2.new(0, 135, 0, 40)
+CheckBtn.Position = UDim2.new(0, 30, 0, 125)
+CheckBtn.BackgroundColor3 = Color3.fromRGB(78, 134, 255)
+CheckBtn.Text = "Submit Key"
+CheckBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CheckBtn.Font = Enum.Font.GothamBold
+CheckBtn.TextSize = 14
+CheckBtn.Parent = KeyFrame
+
+local CheckCorner = Instance.new("UICorner")
+CheckCorner.CornerRadius = UDim.new(0, 6)
+CheckCorner.Parent = CheckBtn
+
+local GetBtn = Instance.new("TextButton")
+GetBtn.Size = UDim2.new(0, 135, 0, 40)
+GetBtn.Position = UDim2.new(1, -165, 0, 125)
+GetBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+GetBtn.Text = "Get Key (Discord)"
+GetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+GetBtn.Font = Enum.Font.GothamBold
+GetBtn.TextSize = 13
+GetBtn.Parent = KeyFrame
+
+local GetCorner = Instance.new("UICorner")
+GetCorner.CornerRadius = UDim.new(0, 6)
+GetCorner.Parent = GetBtn
+
+GetBtn.MouseButton1Click:Connect(function()
+    if setclipboard then
+        setclipboard("https://discord.gg/R3ymPNNtwS")
+        GetBtn.Text = "Copied Link!"
+        task.wait(2)
+        GetBtn.Text = "Get Key (Discord)"
+    end
+end)
+
+local isChecking = false
+CheckBtn.MouseButton1Click:Connect(function()
+    if isChecking then return end
+    
+    if KeyInput.Text == "BEHAX123" or KeyInput.Text == "behax123" then
+        isChecking = true
+        CheckBtn.Text = "Checking..."
+        CheckBtn.BackgroundColor3 = Color3.fromRGB(200, 160, 50)
+        task.wait(0.8)
+        
+        CheckBtn.Text = "Valid Key!"
+        CheckBtn.BackgroundColor3 = Color3.fromRGB(46, 255, 113)
+        task.wait(0.5)
+        
+        -- Cool Animation Out
+        local ti = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+        TweenService:Create(KeyFrame, ti, {Size = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 1}):Play()
+        TweenService:Create(KeyTitle, ti, {TextTransparency = 1}):Play()
+        TweenService:Create(KeyInput, ti, {BackgroundTransparency = 1, TextTransparency = 1}):Play()
+        TweenService:Create(CheckBtn, ti, {BackgroundTransparency = 1, TextTransparency = 1}):Play()
+        TweenService:Create(GetBtn, ti, {BackgroundTransparency = 1, TextTransparency = 1}):Play()
+        TweenService:Create(KeyStroke, TweenInfo.new(0.5), {Transparency = 1}):Play()
+        
+        task.wait(0.5)
+        KeyFrame.Visible = false
+        
+        -- Main Frame Animation In
+        MainFrame.Size = UDim2.new(0, 0, 0, 0)
+        MainFrame.Visible = true
+        local tiIn = TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+        TweenService:Create(MainFrame, tiIn, {Size = UDim2.new(0, 550, 0, 360)}):Play()
+        
+        -- Start all features now that key is passed
+        if InitializeFeatures then InitializeFeatures() end
+        
+    else
+        isChecking = true
+        CheckBtn.Text = "Checking..."
+        CheckBtn.BackgroundColor3 = Color3.fromRGB(200, 160, 50)
+        task.wait(0.5)
+        
+        CheckBtn.Text = "Invalid Key"
+        CheckBtn.BackgroundColor3 = Color3.fromRGB(255, 46, 46)
+        KeyInput.Text = ""
+        task.wait(1)
+        
+        CheckBtn.Text = "Submit Key"
+        CheckBtn.BackgroundColor3 = Color3.fromRGB(78, 134, 255)
+        isChecking = false
+    end
+end)
+
+-- Dragging Logic for KeyFrame
+local dragToggle, dragStart, startPos
+KeyFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragToggle = true; dragStart = input.Position; startPos = KeyFrame.Position
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragToggle and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        KeyFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then dragToggle = false end
+end)
+
 local function KillScript()
     Settings.Killed = true
     for _, conn in pairs(Connections) do if conn then conn:Disconnect() end end
@@ -251,15 +449,7 @@ Logo.Size = UDim2.new(0, 48, 0, 48) -- CLEANER SIZE
 Logo.Position = UDim2.new(0, 12, 0.5, -24)
 Logo.BackgroundTransparency = 1
 
-local logoUrl = "https://raw.githubusercontent.com/butucante-sys/scripts/main/BeHaxLogoNoBg.png"
-local success, result = pcall(function()
-    if writefile and getcustomasset and readfile then
-        if not isfile("BeHaxLogo.png") then writefile("BeHaxLogo.png", game:HttpGet(logoUrl)) end
-        return getcustomasset("BeHaxLogo.png")
-    end
-    return logoUrl
-end)
-Logo.Image = success and result or logoUrl
+Logo.Image = finalLogoImage
 Logo.Parent = TopBar
 
 local Title = Instance.new("TextLabel")
@@ -484,6 +674,70 @@ local function createSlider(parent, name, min, max, default, callback)
     UserInputService.InputChanged:Connect(function(input) if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then update() end end)
 end
 
+local function createKeybind(parent, name, default, callback)
+    local bindFrame = Instance.new("Frame")
+    bindFrame.Size = UDim2.new(1, 0, 0, 40)
+    bindFrame.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+    bindFrame.BorderSizePixel = 0
+    bindFrame.Parent = parent
+    
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 6)
+    Corner.Parent = bindFrame
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -95, 1, 0)
+    label.Position = UDim2.new(0, 15, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(200, 200, 210)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = bindFrame
+    
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 70, 0, 24)
+    btn.Position = UDim2.new(1, -80, 0.5, -12)
+    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    local defName = default.Name
+    if defName:match("MouseButton") then defName = defName:gsub("MouseButton", "MB") end
+    btn.Text = defName
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    btn.Parent = bindFrame
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 4)
+    btnCorner.Parent = btn
+    
+    local listening = false
+    btn.MouseButton1Click:Connect(function()
+        if listening then return end
+        listening = true
+        btn.Text = "..."
+        local conn
+        conn = UserInputService.InputBegan:Connect(function(input)
+            local key
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                key = input.KeyCode
+            elseif input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.MouseButton3 then
+                key = input.UserInputType
+            end
+            
+            if key and key ~= Enum.KeyCode.Unknown then
+                local kname = key.Name
+                if kname:match("MouseButton") then kname = kname:gsub("MouseButton", "MB") end
+                btn.Text = kname
+                callback(key)
+                listening = false
+                conn:Disconnect()
+            end
+        end)
+    end)
+end
+
 -- Dragging Logic
 local dragging, dragStart, startPos
 TopBar.InputBegan:Connect(function(input)
@@ -520,18 +774,58 @@ local function createSection(parent, name)
     label.Parent = parent
 end
 
-createSection(CombatTab, "GENERAL")
-createToggle(CombatTab, "Aimbot (Hold E / Left Click)", Settings.Aimlock, function(v) Settings.Aimlock = v end)
+createSection(CombatTab, "SHERIFF")
+createToggle(CombatTab, "Sheriff Aimbot", Settings.SheriffAimlock, function(v) Settings.SheriffAimlock = v end)
+createKeybind(CombatTab, "Aim Keybind", Settings.SheriffAimKey, function(v) Settings.SheriffAimKey = v end)
+createToggle(CombatTab, "Auto Shoot", Settings.SheriffAutoShoot, function(v) Settings.SheriffAutoShoot = v end)
 
 createSection(CombatTab, "MURDERER")
+createToggle(CombatTab, "Murderer Aimbot", Settings.MurdererAimlock, function(v) Settings.MurdererAimlock = v end)
+createKeybind(CombatTab, "Aim Keybind", Settings.MurdererAimKey, function(v) Settings.MurdererAimKey = v end)
 createToggle(CombatTab, "Knife Aura", Settings.KnifeAura, function(v) Settings.KnifeAura = v end)
-createToggle(CombatTab, "Aimbot (Hold E)", Settings.Aimlock, function(v) Settings.Aimlock = v end)
 createSlider(CombatTab, "Aura Range", 5, 25, Settings.AuraRange, function(v) Settings.AuraRange = v end)
 createToggle(CombatTab, "Show Range Visual", Settings.ShowAuraVisual, function(v) Settings.ShowAuraVisual = v end)
 
--- Initialize Systems FAST
-task.spawn(initCombat)
-for _, player in ipairs(Players:GetPlayers()) do task.spawn(applyESP, player) end
-table.insert(Connections, Players.PlayerAdded:Connect(applyESP))
+local PlayerTab = createTab("Player")
+createSection(PlayerTab, "MOVEMENT")
+createSlider(PlayerTab, "Walk Speed", 16, 120, Settings.WalkSpeed, function(v) Settings.WalkSpeed = v end)
+createSlider(PlayerTab, "Jump Power", 50, 200, Settings.JumpPower, function(v) Settings.JumpPower = v end)
+createToggle(PlayerTab, "Infinite Jump", Settings.InfJump, function(v) Settings.InfJump = v end)
 
-print("BeHax Hub Refined Loaded!")
+InitializeFeatures = function()
+    task.spawn(initCombat)
+    for _, player in ipairs(Players:GetPlayers()) do task.spawn(applyESP, player) end
+    table.insert(Connections, Players.PlayerAdded:Connect(applyESP))
+    
+    -- Infinite Jump
+    table.insert(Connections, UserInputService.JumpRequest:Connect(function()
+        if Settings.Killed or not Settings.InfJump then return end
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+            end
+        end
+    end))
+    
+    -- Speed / Jump Power loop
+    table.insert(Connections, RunService.Heartbeat:Connect(function()
+        if Settings.Killed then return end
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                if Settings.WalkSpeed ~= 16 then
+                    humanoid.WalkSpeed = Settings.WalkSpeed
+                end
+                if Settings.JumpPower ~= 50 then
+                    humanoid.UseJumpPower = true
+                    humanoid.JumpPower = Settings.JumpPower
+                end
+            end
+        end
+    end))
+    
+    print("BeHax Hub Refined Loaded!")
+end
